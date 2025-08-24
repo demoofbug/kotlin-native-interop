@@ -1,8 +1,10 @@
 import com.getiox.gradle.buildsrc.PkgConfig
 import com.getiox.gradle.buildsrc.isLinux
+import com.getiox.gradle.buildsrc.skipBuildIfNotLinux
+
+skipBuildIfNotLinux()
 
 val pkg = PkgConfig(project)
-
 kotlin {
     if (isLinux) {
         listOf(linuxX64(), linuxArm64()).forEach {

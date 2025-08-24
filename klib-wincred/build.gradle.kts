@@ -1,4 +1,7 @@
 import com.getiox.gradle.buildsrc.isWindows
+import com.getiox.gradle.buildsrc.skipBuildIfNotWindows
+
+skipBuildIfNotWindows()
 
 kotlin {
     if(isWindows) {
