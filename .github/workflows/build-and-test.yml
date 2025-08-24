@@ -68,6 +68,8 @@ jobs:
         install: |
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-pkg-config
+          mingw-w64-x86_64-headers
+          mingw-w64-x86_64-winpthreads
           
     - name: Build project
       run: |
