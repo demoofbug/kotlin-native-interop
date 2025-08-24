@@ -2,7 +2,7 @@ package = com.microsoft.wincred
 
 language = C
 headers = wincred.h
-headerFilter = wincred.h
+#headerFilter = wincred.h
 
 # Compiler options
 compilerOpts = -DUNICODE \
