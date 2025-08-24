@@ -5,5 +5,5 @@ headers = wincred.h
 headerFilter = wincred.h
 
 # Enable Unicode support
-compilerOpts = -DUNICODE -D_UNICODE
+compilerOpts = -DUNICODE -D_UNICODE -include windows.h
 linkerOpts = -ladvapi32 -lcredui
