@@ -1,0 +1,132 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to publish (e.g.: v1.0.0)'
+        required: true
+        type: string
+      skip_validation:
+        description: 'Skip validation steps'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    name: Publish Draft Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Validate release tag format
+      if: inputs.skip_validation == false
+      run: |
+        TAG="${{ inputs.release_tag }}"
+        if [[ ! $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ Error: Invalid tag format. Please use semantic version format (e.g.: v1.0.0)"
+          exit 1
+        fi
+        echo "✅ Tag format validation passed: $TAG"
+        
+    - name: Check if release exists
+      id: check_release
+      run: |
+        TAG="${{ inputs.release_tag }}"
+        
+        # Check if Release exists
+        RELEASE_INFO=$(gh release view "$TAG" --json isDraft,published || echo "")
+        
+        if [ -z "$RELEASE_INFO" ]; then
+          echo "❌ Error: Release $TAG does not exist"
+          exit 1
+        fi
+        
+        IS_DRAFT=$(echo "$RELEASE_INFO" | jq -r '.isDraft')
+        IS_PUBLISHED=$(echo "$RELEASE_INFO" | jq -r '.published')
+        
+        if [ "$IS_DRAFT" != "true" ]; then
+          echo "❌ Error: Release $TAG is not in draft status"
+          echo "Current status: isDraft=$IS_DRAFT, published=$IS_PUBLISHED"
+          exit 1
+        fi
+        
+        echo "✅ Found draft Release: $TAG"
+        echo "draft_exists=true" >> $GITHUB_OUTPUT
+        echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Publish draft release
+      if: steps.check_release.outputs.draft_exists == 'true'
+      run: |
+        TAG="${{ steps.check_release.outputs.release_tag }}"
+        
+        echo "📦 Publishing draft Release: $TAG"
+        
+        # Publish draft Release
+        gh release edit "$TAG" --draft=false
+        
+        echo "✅ Release $TAG published successfully!"
+        
+        # Get Release information
+        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$TAG"
+        echo "🔗 Release URL: $RELEASE_URL"
+        
+        # List files in Release
+        echo ""
+        echo "📋 Files included in Release:"
+        gh release view "$TAG" --json assets --jq '.assets[].name' | while read asset; do
+          echo "  - $asset"
+        done
+        
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Post-publish validation
+      run: |
+        TAG="${{ steps.check_release.outputs.release_tag }}"
+        
+        echo "🔍 Validating publish status..."
+        
+        # Wait a few seconds for GitHub API to update
+        sleep 5
+        
+        # Verify Release is published
+        RELEASE_INFO=$(gh release view "$TAG" --json isDraft,published)
+        IS_DRAFT=$(echo "$RELEASE_INFO" | jq -r '.isDraft')
+        IS_PUBLISHED=$(echo "$RELEASE_INFO" | jq -r '.published')
+        
+        if [ "$IS_DRAFT" == "true" ]; then
+          echo "❌ Error: Release is still in draft status"
+          exit 1
+        fi
+        
+        if [ "$IS_PUBLISHED" != "true" ]; then
+          echo "❌ Error: Release was not published correctly"
+          exit 1
+        fi
+        
+        echo "✅ Publish validation successful!"
+        echo "🎉 Release $TAG is officially published and available for download"
+        
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Notify completion
+      run: |
+        TAG="${{ steps.check_release.outputs.release_tag }}"
+        echo ""
+        echo "🎊 Publication Summary:"
+        echo "=================="
+        echo "📦 Version: $TAG"
+        echo "🔗 Link: https://github.com/${{ github.repository }}/releases/tag/$TAG"
+        echo "📅 Published: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo ""
+        echo "✅ Users can now download KLIB files for this version!"
