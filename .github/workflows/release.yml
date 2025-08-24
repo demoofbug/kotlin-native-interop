@@ -9,12 +9,22 @@ permissions:
   contents: write  # Create Release and upload files
 
 jobs:
-  build-linux:
-    name: Build libsecret for Linux
-    runs-on: ubuntu-latest
+  build-and-release:
+    name: Build and Release on ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    
     strategy:
+      fail-fast: false
       matrix:
-        target: [linuxX64, linuxArm64]
+        include:
+          - os: linux
+            runner: ubuntu-latest
+            
+          - os: windows
+            runner: windows-latest
+            
+          - os: macos
+            runner: macos-latest
     
     steps:
     - name: Checkout code
@@ -33,53 +43,18 @@ jobs:
           ~/.gradle/caches
           ~/.gradle/wrapper
           .gradle/
-        key: ubuntu-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
         restore-keys: |
-          ubuntu-gradle-
+          ${{ runner.os }}-gradle-
           
     - name: Install Linux dependencies
+      if: runner.os == 'Linux'
       run: |
         sudo apt-get update
         sudo apt-get install -y libsecret-1-dev libglib2.0-dev pkg-config
         
-    - name: Build libsecret for ${{ matrix.target }}
-      run: |
-        echo "Building libsecret for ${{ matrix.target }}..."
-        ./gradlew :klib-libsecret:${{ matrix.target }}Main --info
-        
-    - name: Upload Linux artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: libsecret-${{ matrix.target }}
-        path: klib-libsecret/build/bin/${{ matrix.target }}/
-        retention-days: 1
-
-  build-windows:
-    name: Build wincred for Windows
-    runs-on: windows-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        
-    - name: Setup Gradle Cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-          .gradle/
-        key: windows-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          windows-gradle-
-          
     - name: Setup Windows build environment
+      if: runner.os == 'Windows'
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
@@ -88,22 +63,55 @@ jobs:
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-pkg-config
           
-    - name: Build wincred for Windows x64
+    - name: Build release artifacts
       run: |
-        echo "Building wincred for Windows x64..."
-        ./gradlew :klib-wincred:mingwX64Main --info
+        echo "Building entire project on ${{ matrix.os }}"
+        ./gradlew clean build --info
         
-    - name: Upload Windows artifacts
+    - name: Extract version from tag
+      id: version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        
+    - name: Prepare release files
+      run: |
+        mkdir -p release-${{ matrix.os }}
+        VERSION="${{ steps.version.outputs.version }}"
+        
+        # Find and copy all KLIB files
+        find . -name "*.klib" -type f | while read file; do
+          if [ -n "$file" ]; then
+            filename=$(basename "$file")
+            cp "$file" "release-${{ matrix.os }}/${filename}"
+            echo "Copied: $file -> release-${{ matrix.os }}/${filename}"
+          fi
+        done
+        
+        # Generate checksums
+        cd release-${{ matrix.os }}
+        if [ -n "$(ls *.klib 2>/dev/null)" ]; then
+          sha256sum *.klib > checksums-${{ matrix.os }}.txt
+        else
+          touch checksums-${{ matrix.os }}.txt
+        fi
+        cd ..
+        
+        echo "Release files for ${{ matrix.os }}:"
+        ls -la release-${{ matrix.os }}/
+        
+    - name: Upload release artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: wincred-mingwX64
-        path: klib-wincred/build/bin/mingwX64/
+        name: release-${{ matrix.os }}
+        path: release-${{ matrix.os }}/
         retention-days: 1
 
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-linux, build-windows]
+    needs: build-and-release
     
     steps:
     - name: Checkout code
@@ -121,52 +129,23 @@ jobs:
       with:
         path: artifacts/
         
-    - name: Prepare release files
+    - name: Organize release files
       run: |
-        mkdir -p release-files
+        mkdir -p final-release
         VERSION="${{ steps.version.outputs.version }}"
         
-        echo "Organizing artifacts..."
-        ls -la artifacts/
-        
-        # Find and copy libsecret KLIB files
-        find artifacts/libsecret-linuxX64 -name "*.klib" -type f | head -1 | while read file; do
+        # Copy all KLIB files from all platforms
+        find artifacts/ -name "*.klib" -type f | while read file; do
           if [ -n "$file" ]; then
-            cp "$file" "release-files/klib-libsecret-${VERSION}-linuxX64.klib"
-            echo "Copied: $file -> release-files/klib-libsecret-${VERSION}-linuxX64.klib"
+            cp "$file" final-release/
           fi
         done
         
-        find artifacts/libsecret-linuxArm64 -name "*.klib" -type f | head -1 | while read file; do
-          if [ -n "$file" ]; then
-            cp "$file" "release-files/klib-libsecret-${VERSION}-linuxArm64.klib"
-            echo "Copied: $file -> release-files/klib-libsecret-${VERSION}-linuxArm64.klib"
-          fi
-        done
+        # Combine all checksums
+        find artifacts/ -name "checksums-*.txt" -type f -exec cat {} \; > final-release/checksums.txt
         
-        # Find and copy wincred KLIB files
-        find artifacts/wincred-mingwX64 -name "*.klib" -type f | head -1 | while read file; do
-          if [ -n "$file" ]; then
-            cp "$file" "release-files/klib-wincred-${VERSION}-mingwX64.klib"
-            echo "Copied: $file -> release-files/klib-wincred-${VERSION}-mingwX64.klib"
-          fi
-        done
-        
-        # Generate checksum file
-        cd release-files
-        if [ -n "$(ls *.klib 2>/dev/null)" ]; then
-          sha256sum *.klib > checksums.txt
-          echo "Generated checksums:"
-          cat checksums.txt
-        else
-          echo "Warning: No KLIB files found!"
-          touch checksums.txt
-        fi
-        cd ..
-        
-        # List all files
-        echo "Release files:"
-        ls -la release-files/
+        echo "Final release files:"
+        ls -la final-release/
         
     - name: Generate release notes
       id: release_notes
@@ -184,27 +163,11 @@ jobs:
         
         ### 📦 Build Artifacts
         
-        - \`klib-libsecret-${VERSION}-linuxX64.klib\` - libsecret library for Linux x64 platform
-        - \`klib-libsecret-${VERSION}-linuxArm64.klib\` - libsecret library for Linux ARM64 platform  
-        - \`klib-wincred-${VERSION}-mingwX64.klib\` - wincred library for Windows x64 platform
-        - \`checksums.txt\` - SHA-256 checksums for all files
+        This release includes KLIB files for all supported platforms. The build system automatically detects the platform and builds the appropriate modules.
         
         ### 🛠️ Usage
         
-        1. Download the KLIB file for your platform
-        2. Reference it in your Kotlin/Native project:
-        
-        \`\`\`kotlin
-        kotlin {
-            linuxX64 {
-                compilations.getByName("main") {
-                    val libsecret by cinterops.creating {
-                        defFile("path/to/klib-libsecret-${VERSION}-linuxX64.klib")
-                    }
-                }
-            }
-        }
-        \`\`\`
+        Add the appropriate KLIB dependency to your Kotlin/Native project based on your target platform.
         
         ### 🔧 System Requirements
         
@@ -231,8 +194,7 @@ jobs:
         name: Release ${{ steps.version.outputs.tag }}
         body: ${{ steps.release_notes.outputs.notes }}
         files: |
-          release-files/*.klib
-          release-files/checksums.txt
+          final-release/*
         draft: true
         prerelease: false
         generate_release_notes: true
@@ -244,7 +206,7 @@ jobs:
         echo "✅ Draft Release ${{ steps.version.outputs.tag }} created successfully!"
         echo "📝 Status: Draft (requires manual publishing)"
         echo "📦 Files uploaded:"
-        ls -la release-files/
+        ls -la final-release/
         echo ""
         echo "🔗 Draft Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
         echo ""
