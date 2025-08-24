@@ -74,10 +74,6 @@ jobs:
         echo "Building entire project on ${{ matrix.os }}"
         ./gradlew build --info
         
-    - name: Run tests
-      run: |
-        ./gradlew test --continue
-        
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
