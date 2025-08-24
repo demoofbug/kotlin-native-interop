@@ -1,17 +1,9 @@
 package = com.microsoft.wincred
 
+language = C
 headers = wincred.h
 headerFilter = wincred.h
 
 # Enable Unicode support
 compilerOpts = -DUNICODE -D_UNICODE
-
-# Windows system libraries (provided by build script)
-staticLibraries =
-libraryPaths =
-
-# Main API function hints
-# CredWrite - Write credentials to Windows Credential Manager
-# CredRead - Read credentials from Credential Manager
-# CredDelete - Delete credentials from Credential Manager
-# CredEnumerate - Enumerate credentials in Credential Manager
+linkerOpts = -ladvapi32 -lcredui

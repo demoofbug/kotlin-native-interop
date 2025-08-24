@@ -12,7 +12,7 @@ kotlin {
                     packageName("com.microsoft.wincred")
 
                     // Link Windows system libraries
-                    linkerOpts.addAll(listOf("-ladvapi32", "-lcredui"))
+                  //  linkerOpts.addAll(listOf("-ladvapi32", "-lcredui"))
                 }
             }
         }
