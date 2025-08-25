@@ -1,4 +1,4 @@
-package = com.microsoft.wincred
+package = platform.windows.wincred
 headers = wtypes.h wincred.h
 headerFilter = wincred.h
 
