@@ -1,17 +1,6 @@
 package = com.microsoft.wincred
+headers = wtypes.h wincred.h
+headerFilter = wincred.h
 
-language = C
-headers = wincred.h
-#headerFilter = wincred.h
-
-# Compiler options
-compilerOpts = -DUNICODE \
-               -DWINVER=0x0601 \
-               -D_WIN32_WINNT=0x0601 \
-               -DWINAPI_FAMILY=3 \
-               -include windows.h \
-               -Wno-incompatible-pointer-types \
-               -Wno-deprecated-declarations
-
-# Link to Windows system libraries
-linkerOpts = -ladvapi32 -lcredui
+compilerOpts = -DUNICODE
+linkerOpts = -lAdvapi32
